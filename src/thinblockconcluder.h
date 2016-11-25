@@ -11,6 +11,7 @@ typedef int NodeId;
 class CBlockIndex;
 class uint256;
 struct XThinReReqResponse;
+class CompactReReqResponse;
 
 namespace Consensus { struct Params; }
 
@@ -43,18 +44,15 @@ struct BloomBlockConcluder {
         BlockInFlightMarker& markInFlight;
 };
 
-struct BlockInFlightMarker {
-    virtual ~BlockInFlightMarker() = 0;
-    virtual void operator()(
-        NodeId nodeid, const uint256& hash,
-        const Consensus::Params& consensusParams,
-        CBlockIndex *pindex) = 0;
-};
-inline BlockInFlightMarker::~BlockInFlightMarker() { }
-
 // Finishes a block using response from a transaction re-request.
 struct XThinBlockConcluder {
     void operator()(const XThinReReqResponse& resp,
+        CNode& pfrom, ThinBlockWorker& worker);
+};
+
+// Finishes a block using response from a transaction re-request.
+struct CompactBlockConcluder {
+    void operator()(const CompactReReqResponse& resp,
         CNode& pfrom, ThinBlockWorker& worker);
 };
 

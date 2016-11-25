@@ -2190,8 +2190,6 @@ bool CNode::SupportsBloomThinBlocks() const {
     if (!SupportsBloom())
         return false;
 
-    const int SENDHEADERS_VERSION = 70012;
-
     // Bitcoin Core removed filterInventoryKnown filtering in 0.12,
     // causing those nodes to send us all transactions in a block.
     //
@@ -2202,4 +2200,12 @@ bool CNode::SupportsBloomThinBlocks() const {
 
 bool CNode::SupportsXThinBlocks() const {
     return nServices & NODE_THIN;
+}
+
+bool CNode::SupportsCompactBlocks() const {
+
+    // If a Core node activates segwit, it also
+    // disables support for compact blocks v1
+    return nVersion >= SHORT_IDS_BLOCKS_VERSION
+        && !(nServices & NODE_WITNESS);
 }

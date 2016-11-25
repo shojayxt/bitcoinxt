@@ -14,6 +14,13 @@ struct Opt {
     std::vector<std::string> UAComment(bool validate = false);
     int ScriptCheckThreads();
     int64_t CheckpointDays();
+
+    // Thin block options
+    bool UsingThinBlocks();
+    bool AvoidFullBlocks();
+    bool OptimalThinBlocksOnly();
+    int ThinBlocksMaxParallel();
+    bool PreferCompactBlocks() const; // Added for rpc test
 };
 
 /** Maximum number of script-checking threads allowed */
@@ -40,6 +47,6 @@ struct ArgReset {
 // Temporary replace the global getter for fetching user configurations.
 //
 // Returns a RAII object that sets system back to default state.
-std::auto_ptr<ArgReset> SetDummyArgGetter(std::auto_ptr<ArgGetter>);
+std::unique_ptr<ArgReset> SetDummyArgGetter(std::unique_ptr<ArgGetter>);
 
 #endif

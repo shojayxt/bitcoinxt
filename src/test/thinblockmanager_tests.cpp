@@ -9,12 +9,6 @@
 #include "chainparams.h"
 #include <memory>
 
-std::auto_ptr<ThinBlockManager> GetMg() {
-    return std::auto_ptr<ThinBlockManager>(new ThinBlockManager(
-        std::auto_ptr<ThinBlockFinishedCallb>(new DummyFinishedCallb),
-        std::auto_ptr<InFlightEraser>(new DummyInFlightEraser)));
-}
-
 // Workaround for segfaulting
 struct Workaround {
     Workaround() {
@@ -25,9 +19,9 @@ struct Workaround {
 BOOST_FIXTURE_TEST_SUITE(thinblockmanager_tests, Workaround);
 
 BOOST_AUTO_TEST_CASE(add_and_del_worker) {
-    std::auto_ptr<ThinBlockManager> mg = GetMg();
+    std::unique_ptr<ThinBlockManager> mg = GetDummyThinBlockMg();
 
-    std::auto_ptr<ThinBlockWorker> worker(new XThinWorker(*mg, 42));
+    std::unique_ptr<ThinBlockWorker> worker(new XThinWorker(*mg, 42));
 
     // Assigning a worker to a block adds it to the manager.
     uint256 block = uint256S("0xFF");

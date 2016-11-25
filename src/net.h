@@ -290,9 +290,9 @@ public:
     //    until it has initialized its bloom filter.
     bool fRelayTxes;
     CSemaphoreGrant grantOutbound;
-    CCriticalSection cs_filter;
+    CCriticalSection cs_filter, cs_xfilter;
     CBloomFilter* pfilter;
-    std::auto_ptr<CBloomFilter> xthinFilter;
+    std::unique_ptr<CBloomFilter> xthinFilter;
     int nRefCount;
     NodeId id;
 
@@ -331,6 +331,10 @@ public:
     CCriticalSection cs_inventory;
     std::multimap<int64_t, CInv> mapAskFor;
 
+    // Used for headers announcements - unfiltered blocks to relay
+    // Also protected by cs_inventory
+    std::vector<uint256> blocksToAnnounce;
+
     // Ping time measurement:
     // The pong reply we're expecting, or 0 if no pong expected.
     uint64_t nPingNonceSent;
@@ -342,7 +346,7 @@ public:
     bool fPingQueued;
 
     // adds connection to ipgroup (for prioritising connection slots)
-    std::auto_ptr<IPGroupSlot> ipgroupSlot;
+    std::unique_ptr<IPGroupSlot> ipgroupSlot;
 
     CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn = "", bool fInboundIn=false);
     virtual ~CNode();
@@ -437,9 +441,16 @@ public:
     {
         {
             LOCK(cs_inventory);
-            if (!filterInventoryKnown.contains(inv.hash))
-                vInventoryToSend.push_back(inv);
+            if (inv.type == MSG_TX && filterInventoryKnown.contains(inv.hash))
+                return;
+            vInventoryToSend.push_back(inv);
         }
+    }
+
+    void PushBlockHash(const uint256 &hash)
+    {
+        LOCK(cs_inventory);
+        blocksToAnnounce.push_back(hash);
     }
 
     void AskFor(const CInv& inv);
@@ -650,6 +661,7 @@ public:
 
     bool SupportsBloomThinBlocks() const;
     bool SupportsXThinBlocks() const;
+    bool SupportsCompactBlocks() const;
 };
 
 

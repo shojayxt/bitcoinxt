@@ -1,31 +1,19 @@
 #include "test/thinblockutil.h"
+#include "blockheaderprocessor.h"
 #include "bloom.h"
 #include "bloomthin.h"
 #include "chain.h"
 #include "chainparams.h"
 #include "inflightindex.h"
-#include "main.h"
 #include "merkleblock.h"
 #include "net.h"
 #include "process_merkleblock.h"
 #include "process_xthinblock.h"
+#include "testutil.h"
 #include "util.h" // for fPrintToDebugLog
-#include "utilprocessmsg.h"
 #include "xthin.h"
 #include <boost/test/unit_test_suite.hpp>
 #include <boost/test/test_tools.hpp>
-
-struct DummyBlockIndexEntry {
-DummyBlockIndexEntry(const uint256& hash) : hash(hash) {
-    index.nStatus = BLOCK_HAVE_DATA;
-    mapBlockIndex.insert(std::make_pair(hash, &index));
-    }
-    ~DummyBlockIndexEntry() {
-        mapBlockIndex.erase(hash);
-    }
-    CBlockIndex index;
-    uint256 hash;
-};
 
 template <class WORKER_TYPE>
 struct DummyWorker : public WORKER_TYPE {
@@ -48,7 +36,7 @@ struct DummyHeaderProcessor : public BlockHeaderProcessor {
 
     DummyHeaderProcessor() : headerOK(true), called(false) { }
 
-    bool operator()(const std::vector<CBlockHeader>&, bool) {
+    bool operator()(const std::vector<CBlockHeader>&, bool, bool) override {
         called = true;
         return headerOK;
     }
@@ -60,8 +48,8 @@ struct MerkleblockSetup {
 
     MerkleblockSetup() :
         mstream(SER_NETWORK, PROTOCOL_VERSION),
-        tmgr(std::auto_ptr<ThinBlockFinishedCallb>(new DummyFinishedCallb),
-             std::auto_ptr<InFlightEraser>(new DummyInFlightEraser))
+        tmgr(std::unique_ptr<ThinBlockFinishedCallb>(new DummyFinishedCallb),
+             std::unique_ptr<InFlightEraser>(new DummyInFlightEraser))
     {
         CBloomFilter emptyFilter;
         mblock = CMerkleBlock(TestBlock2(), emptyFilter);
@@ -169,8 +157,8 @@ BOOST_AUTO_TEST_SUITE_END();
 struct XThinBlockSetup {
 
     XThinBlockSetup() :
-        tmgr(std::auto_ptr<ThinBlockFinishedCallb>(new DummyFinishedCallb),
-             std::auto_ptr<InFlightEraser>(new DummyInFlightEraser))
+        tmgr(std::unique_ptr<ThinBlockFinishedCallb>(new DummyFinishedCallb),
+             std::unique_ptr<InFlightEraser>(new DummyInFlightEraser))
     {
         SelectParams(CBaseChainParams::MAIN);
         fPrintToDebugLog = false;
@@ -190,7 +178,11 @@ struct XThinBlockSetup {
 };
 
 struct DummyXThinProcessor : public XThinBlockProcessor {
-    DummyXThinProcessor(CNode& n) : XThinBlockProcessor(n), misbehaved(0) { }
+
+    DummyXThinProcessor(CNode& f, ThinBlockWorker& w,
+        BlockHeaderProcessor& h) : XThinBlockProcessor(f, w, h), misbehaved(0)
+    { }
+
     virtual void misbehave(int howmuch) {
         misbehaved += howmuch;
     }
@@ -206,8 +198,8 @@ BOOST_AUTO_TEST_CASE(xthinblock_ignore_invalid) {
     DummyWorker<XThinWorker> worker(tmgr, 42);
     worker.setToWork(xblock.header.GetHash());
     CDataStream s = stream(xblock);
-    DummyXThinProcessor process(pfrom);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
 
     // Should reset the worker.
     BOOST_CHECK(worker.isAvailable());
@@ -226,8 +218,8 @@ BOOST_AUTO_TEST_CASE(xthinblock_ignore_if_has_block_data) {
     DummyWorker<XThinWorker> worker(tmgr, 42);
     worker.setToWork(xblock.header.GetHash());
     CDataStream s = stream(xblock);
-    DummyXThinProcessor process(pfrom);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
 
     // peer should not be working on anything
     BOOST_CHECK(worker.isAvailable());
@@ -240,8 +232,8 @@ BOOST_AUTO_TEST_CASE(xthinblock_ignore_if_not_requested) {
 
     // set to work is not called, so it's not expecting xthinblock
     CDataStream s = stream(xblock);
-    DummyXThinProcessor process(pfrom);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
     BOOST_CHECK(worker.isAvailable());
     BOOST_CHECK(!worker.buildStubCalled);
 }
@@ -250,9 +242,9 @@ BOOST_AUTO_TEST_CASE(xthinblock_header_is_processed) {
     XThinWorker worker(tmgr, 42);
     XThinBlock xblock(TestBlock1(), CBloomFilter());
     worker.setToWork(xblock.header.GetHash());
-    DummyXThinProcessor process(pfrom);
     CDataStream s = stream(xblock);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
 
     BOOST_CHECK(headerprocessor.called);
     BOOST_CHECK(worker.isStubBuilt());
@@ -264,9 +256,9 @@ BOOST_AUTO_TEST_CASE(xthinblock_stop_if_header_fails) {
     XThinBlock xblock(TestBlock1(), CBloomFilter());
     worker.setToWork(xblock.header.GetHash());
     headerprocessor.headerOK = false;
-    DummyXThinProcessor process(pfrom);
     CDataStream s = stream(xblock);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
 
     BOOST_CHECK(worker.isAvailable());
     BOOST_CHECK(!worker.isStubBuilt());
@@ -280,9 +272,9 @@ BOOST_AUTO_TEST_CASE(xthinblock_rerequest_missing) {
     XThinWorker worker(tmgr, 42);
 
     worker.setToWork(xblock.header.GetHash());
-    DummyXThinProcessor process(pfrom);
     CDataStream s = stream(xblock);
-    process(s, worker, NullFinder(), headerprocessor);
+    DummyXThinProcessor process(pfrom, worker, headerprocessor);
+    process(s, NullFinder());
 
     BOOST_CHECK(headerprocessor.called);
     BOOST_CHECK(worker.isStubBuilt());
@@ -298,7 +290,7 @@ BOOST_AUTO_TEST_CASE(xthinblock_rerequest_missing) {
     pfrom.messages.clear();
     xblock = XThinBlock(TestBlock1(), f);
     s = stream(xblock);
-    process(s, worker, NullFinder(), headerprocessor);
+    process(s, NullFinder());
     BOOST_CHECK(pfrom.messages.empty());
 }
 

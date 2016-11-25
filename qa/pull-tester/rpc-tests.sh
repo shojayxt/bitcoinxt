@@ -36,6 +36,9 @@ testScripts=(
     'signrawtransactions.py'
     'walletbackup.py'
     'p2p-versionbits-warning.py'
+    'decodescript.py'
+    'sendheaders.py'
+    'p2p-compactblocks.py'
 );
 testScriptsExt=(
     'bigblocks.py'
@@ -61,7 +64,6 @@ testScriptsExt=(
     'maxblocksinflight.py'
     'invalidblockrequest.py'
     'rawtransactions.py'
-#    'forknotify.py'
     'p2p-acceptblock.py'
     'mempool_packages.py'
 );
